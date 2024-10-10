@@ -3,8 +3,13 @@ import pandas as pd
 import plotly.express as px
 import numpy as np
 import plotly.graph_objects as go
-# When getting state data, join it directly to the united states map section to avoid having to aggregate
-# when getting city level data, will have to join directly on to cities and then aggregate from there
+# Most recent correct app, still need to make appearance pretty, find more statistics
+# Maybe covid, wealth
+st.set_page_config(layout="wide")
+
+if 'page' not in st.session_state:
+    st.session_state.page = 'intro'
+
 STATE_BOUNDS = {
     "Alabama": {"lat_range": [30.1, 35.0], "lon_range": [-88.5, -84.9]},
     "Arizona": {"lat_range": [31.3, 37.0], "lon_range": [-114.8, -109.0]},
@@ -69,50 +74,98 @@ STATE_ABBREVIATIONS = {
     "Washington": "WA", "West Virginia": "WV", "Wisconsin": "WI", "Wyoming": "WY"
 }
 
+
 US_REGIONS = {
     "New England": ["Maine", "Rhode Island", "Connecticut", "Vermont", "New Hampshire", "Massachusetts"],
     "Mid-Atlantic": ["New York", "New Jersey", "Pennsylvania"],
-    "Southeast": ["Virginia", "West Virginia", "North Carolina", "South Carolina", "Georgia", "Florida", "Alabama", "Mississippi", "Tennessee", "Kentucky"],
-    "Midwest": ["Ohio", "Indiana", "Illinois", "Michigan", "Wisconsin", "Minnesota", "Iowa", "Missouri", "North Dakota", "South Dakota", "Nebraska", "Kansas"],
+    "Southeast": ["Virginia", "West Virginia", "North Carolina", "South Carolina", "Georgia", "Florida", "Alabama",
+                  "Mississippi", "Tennessee", "Kentucky"],
+    "Midwest": ["Ohio", "Indiana", "Illinois", "Michigan", "Wisconsin", "Minnesota", "Iowa", "Missouri",
+                "North Dakota", "South Dakota", "Nebraska", "Kansas"],
     "Southwest": ["Texas", "Oklahoma", "New Mexico", "Arizona"],
-    "West": ["California", "Nevada", "Utah", "Colorado", "Wyoming", "Montana", "Idaho", "Washington", "Oregon", "Alaska", "Hawaii"]
-}
-
-
-# Define US regions
-US_REGIONS = {
-    "New England": ["Maine", "Rhode Island", "Connecticut", "Vermont", "New Hampshire", "Massachusetts"],
-    "Mid-Atlantic": ["New York", "New Jersey", "Pennsylvania"],
-    "Southeast": ["Virginia", "West Virginia", "North Carolina", "South Carolina", "Georgia", "Florida", "Alabama", "Mississippi", "Tennessee", "Kentucky"],
-    "Midwest": ["Ohio", "Indiana", "Illinois", "Michigan", "Wisconsin", "Minnesota", "Iowa", "Missouri", "North Dakota", "South Dakota", "Nebraska", "Kansas"],
-    "Southwest": ["Texas", "Oklahoma", "New Mexico", "Arizona"],
-    "West": ["California", "Nevada", "Utah", "Colorado", "Wyoming", "Montana", "Idaho", "Washington", "Oregon", "Alaska", "Hawaii"]
+    "West": ["California", "Nevada", "Utah", "Colorado", "Wyoming", "Montana", "Idaho",
+             "Washington", "Oregon", "Alaska", "Hawaii"]
 }
 
 
 # Load Data Function
 def data_load(data):
-    return pd.read_csv(data)
+    try:
+        return pd.read_csv(data)
+    except FileNotFoundError:
+        st.error(f"File '{data}' not found.")
+        return pd.DataFrame()  # Return empty DataFrame on error
+
+
+def intro_page():
+    st.title("Welcome to MapMaster: Uncover U.S. Stats at a Glance!")
+    st.write("""
+        This app allows you to explore various statistical data related to population, housing, covid, employment data,
+        and crime across different states and regions of the United States. 
+        You can visualize the data on a map or view detailed tables of the data.
+        To use this app, first you select either United States, or individual regions/states. 
+        If you select the entire United States, you will be able to select two statistics per state 
+        and see their correlation. 
+        If you select individual states or regions as a whole, you will see statistics by the city level or aggregate to
+        the county level. 
+    """)
+    if st.button("Start Exploring!"):
+        st.session_state.page = 'map'
+
+    # Create a layout with three columns
+    col1, col2, col3 = st.columns([1.5, 2, 1])  # Adjust the weights as needed
+
+    # Center the image in the middle column
+    with col2:
+        st.image("Headshot.png", width=300,
+                 caption="Hello! My name is Connor Lewis. "
+                         "I am a Senior at West Virginia University majoring in"
+                         " Data Science with a minor in Business Data Analytics. "
+                         "This project was made for DSCI 450 and is designed to be an interactive app.")
 
 
 # Main Function
-def main():
-    city_housing = data_load('housing_data_city.csv')
-    city_housing[['County', 'State_abbrev']] = city_housing['county_name'].str.split(',', expand=True)
-    city_housing['County'] = city_housing['County'].str.strip()
-    city_housing['State_abbrev'] = city_housing['State_abbrev'].str.strip()
+def map_page():
+    # Load datasets
+    # Load crime data and clean it
+    crime_data_raw = data_load('total_crime.csv')
+    # Replacing weird characters with no spaces
+    crime_data_raw['states'].replace("\xa0", '', inplace=True, regex=True)
+    crime_data_raw['states'].replace("8", '', inplace=True, regex=True)
+    # Making cities two columns, city and county
+    crime_data_raw[['city', 'county']] = crime_data_raw['cities'].str.split(', ', expand=True)
+    crime_data_raw.drop(columns=['cities'])
 
-    city_housing['State_abbrev'] = city_housing['State_abbrev'].str.capitalize()
+    for column in ["population", "violent_crime", "murder", "rape", "robbery", "agrv_assault",  "prop_crime",
+                   "burglary", "larceny", "vehicle_theft", "total_crime", "tot_violent_crime",
+                   "tot_prop_crim", "arson"]:
+        crime_data_raw[column] = pd.to_numeric(crime_data_raw[column], errors="coerce")
 
+    crime_data_state = crime_data_raw.groupby('states',
+                                              as_index=False).agg({'violent_crime': 'sum', 'murder': 'sum',
+                                                                   'robbery': 'sum', 'agrv_assault': 'sum',
+                                                                   'burglary': 'sum', 'larceny': 'sum',
+                                                                   'vehicle_theft': 'sum', 'total_crime': 'sum',
+                                                                   'tot_violent_crime': 'sum', 'arson': 'sum'})
+    crime_data_state['state_abrev'] = crime_data_state['states'].replace(STATE_ABBREVIATIONS)
+    # Load more data
+    county_housing = data_load('housing_data_city.csv')
     state_housing = data_load('Housing_data_state.csv')
-    dfPop = data_load('USPopulations.csv')
-    dfCities = data_load("uscities.csv")
-    dfPop['CITY'] = dfPop['CITY'].replace({' town': '', ' city': ''}, regex=True)
-    dfCities = dfCities[(dfCities['state_name'] != 'Hawaii') & (dfCities['state_name'] != 'Alaska')]
+    df_pop = data_load('USPopulations.csv')
+    df_cities = data_load("uscities.csv")
 
-    df = pd.merge(dfPop, dfCities, left_on=['CITY', 'STATE'], right_on=['city', 'state_name'], how='left')
+    # Clean and preprocess city housing data
+    county_housing[['County', 'State_abbrev']] = county_housing['county_name'].str.split(',', expand=True)
+    county_housing['County'] = county_housing['County'].str.strip()
+    county_housing['State_abbrev'] = county_housing['State_abbrev'].str.strip().str.capitalize()
+
+    # Clean population data
+    df_pop['CITY'] = df_pop['CITY'].str.replace(' town', '').str.replace(' city', '')
+    df_cities = df_cities[(df_cities['state_name'] != 'Hawaii') & (df_cities['state_name'] != 'Alaska')]
+
+    # Merge population and city data
+    df = pd.merge(df_pop, df_cities, left_on=['CITY', 'STATE'], right_on=['city', 'state_name'], how='left')
     df.drop(columns=['state_name', 'city', 'lat', 'lng'], inplace=True)
-    # Rename columns for easier referencing
     df.rename(columns={
         "LONG": "lon",
         "LAT": "lat",
@@ -121,13 +174,14 @@ def main():
         "STATE": "state_name",
         'state_id': "state_abbreviation"
     }, inplace=True)
-    st.title("Population Map Visualization")
 
-    # Dropdown menu for selecting regions, states, or the entire US
+    st.title("MapMaster: Uncover U.S. Statistics at a Glance")
+
+    # Region selection
     region_options = ["United States", "All States"] + list(US_REGIONS.keys()) + df['state_name'].unique().tolist()
-    selected_region_or_states = st.multiselect("Select United States, All States, Regions, or Individual States", region_options, default=["United States"])
+    selected_region_or_states = st.multiselect("Select United States, All States, Regions, or Individual States",
+                                               region_options, default=["United States"])
 
-    # Expand selected regions to their corresponding states
     selected_states = set()
     for selection in selected_region_or_states:
         if selection in US_REGIONS:
@@ -137,204 +191,489 @@ def main():
 
     selected_states = list(selected_states)
 
-    # Handle the case for "United States" (aggregate by state)
+    # Map view for United States
     if "United States" in selected_region_or_states and len(selected_region_or_states) == 1:
-        # Group by state and sum population
         state_data = df.groupby('state_abbreviation', as_index=False)['population'].sum()
         state_data = pd.merge(state_data, state_housing, left_on='state_abbreviation', right_on='state_id', how='inner')
+        state_data = pd.merge(state_data, crime_data_state, left_on='state_abbreviation', right_on='state_abrev',
+                              how='left')
+        state_data.drop(columns=['month_date_yyyymm'], inplace=True)
+
+        state_data.rename(columns={"population": "Population Totals",
+                                   "median_listing_price": "Median House Listing Price",
+                                   "active_listing_count": "Active House Listings",
+                                   "median_days_on_market": "Median Days House on Market",
+                                   "new_listing_count": "New Housing Listings",
+                                   "price_increased_count": "Housing Price Increases",
+                                   "price_reduced_count": "Housing Price Reductions",
+                                   "pending_listing_count": "Pending Housing Listings",
+                                   'median_listing_price_per_square_foot': "Median House Listing Price per Square Foot",
+                                   'median_square_feet': "Median House Square Footage",
+                                   'average_listing_price': 'Average House Listing Price',
+                                   'total_listing_count': "Total House Listings",
+                                   'violent_crime': "Violent Crime Totals per 100k People",
+                                   'murder': "Murder Totals per 100k People",
+                                   'robbery': 'Robbery Totals per 100k People',
+                                   'agrv_assault': 'Aggravated Assault Totals per 100k People',
+                                   'burglary': "Burglary Totals per 100k People",
+                                   'larceny': "Larceny Totals per 100k People",
+                                   'vehicle_theft': 'Vehicle Theft Totals per 100k People',
+                                   'total_crime': 'Total Crime per 100k People',
+                                   'tot_violent_crime': 'Total Violent Crime per 100k People',
+                                   'arson': 'Arson Total per 100k People'
+                                   }, inplace=True)
+        # Setting the statistics to be per 100k people for each of the crime columns
+        state_data["Violent Crime Totals per 100k People"] = (
+                (state_data['Violent Crime Totals per 100k People']/state_data['Population Totals']) * 100000)
+
+        state_data['Murder Totals per 100k People'] = (
+                (state_data['Murder Totals per 100k People']/state_data['Population Totals']) * 100000)
+
+        state_data['Robbery Totals per 100k People'] = (
+                (state_data['Robbery Totals per 100k People']/state_data['Population Totals']) * 100000)
+
+        state_data['Aggravated Assault Totals per 100k People'] = (
+                (state_data['Aggravated Assault Totals per 100k People']/state_data['Population Totals']) * 100000)
+
+        state_data['Burglary Totals per 100k People'] = (
+                (state_data['Burglary Totals per 100k People']/state_data['Population Totals']) * 100000)
+
+        state_data['Larceny Totals per 100k People'] = (
+                (state_data['Larceny Totals per 100k People']/state_data['Population Totals']) * 100000)
+
+        state_data['Vehicle Theft Totals per 100k People'] = (
+                (state_data['Vehicle Theft Totals per 100k People']/state_data['Population Totals']) * 100000)
+
+        state_data['Total Crime per 100k People'] = (
+                (state_data['Total Crime per 100k People']/state_data['Population Totals']) * 100000)
+
+        state_data['Total Violent Crime per 100k People'] = (
+                (state_data['Total Violent Crime per 100k People']/state_data['Population Totals']) * 100000)
+
+        state_data['Arson Total per 100k People'] = (
+                (state_data['Arson Total per 100k People']/state_data['Population Totals']) * 100000)
+
+        # Divider
         tab1, tab2 = st.tabs(['Map View', 'Table View'])
+
         with tab1:
-            # Create a state-level choropleth map
-            stat_options = list(state_data.columns)
-            stat_options.remove('state_abbreviation')
-            stat_options.remove('month_date_yyyymm')
-            stat_options.remove('state')
-            stat_options.remove('state_id')
+            stat_options = [col for col in state_data.columns if col not in ['state_abbreviation',
+                                                                             'month_date_yyyymm',
+                                                                             'state',
+                                                                             'state_id',
+                                                                             'state_abrev']]
             stat1 = st.selectbox('Select Statistic for Left Map', stat_options)
             stat2 = st.selectbox('Select Statistic for Right Map', stat_options)
 
-            # Split View
             col1, col2 = st.columns(2)
 
-            with col1:
-                # Create the first map
-                fig1 = px.choropleth(
-                    state_data,
-                    locations='state_abbreviation',
-                    locationmode='USA-states',
-                    color=stat1,
-                    hover_name='state_abbreviation',
-                    hover_data=[stat1],
-                    scope='usa',
-                    color_continuous_scale="Bluered",  # Blue to Red color scale
-                    labels={stat1: stat1},
-                    title=f"State-level {stat1.capitalize()} For Contiguous United States"
+            # Correlation plot
+            # Filter out NaN values for selected statistics
+            # Check if the same statistic is selected for both stat1 and stat2
+            if stat1 == stat2:
+                st.warning(
+                    f"You've selected the same statistic ({stat1}) "
+                    f"for both axes. The correlation is trivially perfect (1.0).")
+            else:
+                # Filter out NaN values for selected statistics
+                filtered_data = state_data[['state_abbreviation', stat1, stat2]].dropna()
+
+                # Correlation plot
+                fig_corr = px.scatter(
+                    filtered_data,
+                    x=stat1,
+                    y=stat2,
+                    hover_data=['state_abbreviation'],
+                    labels={stat1: stat1.capitalize(), stat2: stat2.capitalize()},
+                    title=f"Correlation between {stat1.capitalize()} and {stat2.capitalize()}",
                 )
 
-                fig1.update_layout(
-                    width=900,  # Set the width of the map
-                    height=500,  # Set the height of the map
-                )
+                # Calculate the line of best fit
+                slope, intercept = np.polyfit(filtered_data[stat1], filtered_data[stat2], 1)
+                line_of_best_fit = slope * filtered_data[stat1] + intercept
 
-                st.plotly_chart(fig1, use_container_width=True)
+                # Add the best fit line to the scatter plot
+                fig_corr.add_trace(go.Scatter(
+                    x=filtered_data[stat1],
+                    y=line_of_best_fit,
+                    mode='lines',
+                    name='Best Fit Line',
+                    line=dict(color='red')
+                ))
 
-            with col2:
-                # Create the second map
-                fig2 = px.choropleth(
-                    state_data,
-                    locations='state_abbreviation',
-                    locationmode='USA-states',
-                    color=stat2,
-                    hover_name='state_abbreviation',
-                    hover_data=[stat2],
-                    scope='usa',
-                    color_continuous_scale="Bluered",  # Blue to Red color scale
-                    labels={stat2: stat2},
-                    title=f"State-level {stat2.capitalize()} For Contiguous United States"
-                )
+                # Calculate the correlation coefficient ignoring NaN values
+                corr_coef = np.corrcoef(filtered_data[stat1], filtered_data[stat2])[0, 1]
 
-                fig2.update_layout(
-                    width=900,  # Set the width of the map
-                    height=500,  # Set the height of the map
-                )
+                # Display the plot and the correlation coefficient
+                st.plotly_chart(fig_corr, use_container_width=True)
+                st.write(
+                    f"Correlation coefficient between {stat1.capitalize()} and {stat2.capitalize()}: {corr_coef:.2f}")
+                # Left map
+                with col1:
+                    fig1 = px.choropleth(
+                        state_data,
+                        locations='state_abbreviation',
+                        locationmode='USA-states',
+                        color=stat1,
+                        hover_name='state_abbreviation',
+                        hover_data=[stat1],
+                        scope='usa',
+                        color_continuous_scale="Bluered",
+                        labels={stat1: stat1},
+                        title=f"State-level {stat1.capitalize()} For Contiguous United States"
+                    )
+                    st.plotly_chart(fig1, use_container_width=True)
 
-                st.plotly_chart(fig2, use_container_width=True)
-            # Correlation chart
-            fig_corr = px.scatter(
-                state_data,
-                x=stat1,
-                y=stat2,
-                hover_data=['state_abbreviation'],
-                labels={stat1: stat1.capitalize(), stat2: stat2.capitalize()},
-                title=f"Correlation between {stat1.capitalize()} and {stat2.capitalize()}",
-            )
-
-            # Calculate line of best fit
-            slope, intercept = np.polyfit(state_data[stat1], state_data[stat2], 1)
-            line_of_best_fit = slope * state_data[stat1] + intercept
-
-            # Add line of best fit to the scatter plot
-            fig_corr.add_trace(go.Scatter(
-                x=state_data[stat1],
-                y=line_of_best_fit,
-                mode='lines',
-                name='Best Fit Line',
-                line=dict(color='red')
-            ))
-
-            # Calculate correlation coefficient
-            corr_coef = np.corrcoef(state_data[stat1], state_data[stat2])[0, 1]
-            st.plotly_chart(fig_corr, use_container_width=True)
-            st.write(f"Correlation coefficient between {stat1.capitalize()} and {stat2.capitalize()}: {corr_coef:.2f}")
+                # Right map
+                with col2:
+                    fig2 = px.choropleth(
+                        state_data,
+                        locations='state_abbreviation',
+                        locationmode='USA-states',
+                        color=stat2,
+                        hover_name='state_abbreviation',
+                        hover_data=[stat2],
+                        scope='usa',
+                        color_continuous_scale="Bluered",
+                        labels={stat2: stat2},
+                        title=f"State-level {stat2.capitalize()} For Contiguous United States"
+                    )
+                    st.plotly_chart(fig2, use_container_width=True)
 
         with tab2:
-            st.dataframe(state_data)
+            columns_to_exclude = []
+            state_data_table = state_data.drop(columns=columns_to_exclude)
+            st.dataframe(state_data_table)
 
-    # Handle the case for "All States" (city-level data for all states)
+    # Map view for All States
     elif "All States" in selected_region_or_states:
-        # Display city-level data for all states
         city_data = df.copy()
-        city_data['city'].replace({' town': '', ' city': ''}, regex=True, inplace=True)
-        city_data['log_population'] = np.log10(city_data['population'])
+        city_data['Log Population'] = np.log10(city_data['Population'])
 
+        city_data = pd.merge(city_data, crime_data_raw, left_on=['city', 'state_name'],
+                             right_on=['city', 'states'], how='left')
         tab1, tab2 = st.tabs(['Map View', 'Table View'])
+
         with tab1:
-            # Population range filter
             min_population, max_population = st.slider(
                 "Select Population Range",
-                min_value=int(city_data['population'].min()),
-                max_value=int(city_data['population'].max()),
-                value=(int(city_data['population'].min()), int(city_data['population'].max()))
-            )
-            city_data = city_data[(city_data['population'] >= min_population) & (city_data['population'] <= max_population)]
-
-            # Adjust bounds for all states
-            lat_range = [min(city_data['lat']), max(city_data['lat'])]
-            lon_range = [min(city_data['lon']), max(city_data['lon'])]
-
-            # Create a city-level scatter plot map using Mapbox for street view
-            fig = px.scatter_mapbox(
-                city_data,
-                lat='lat',
-                lon='lon',
-                hover_name='city',
-                hover_data=['state_name', 'population'],
-                color='log_population',
-                color_continuous_scale="Bluered",  # Blue to Red color scale
-                title="City-level Population for All States",
-                zoom=3,
-                height=700
+                min_value=int(city_data['Population'].min()),
+                max_value=int(city_data['Population'].max()),
+                value=(int(city_data['Population'].min()), int(city_data['Population'].max()))
             )
 
-            # Set the mapbox style to "open-street-map" for default street view
-            fig.update_layout(
-                mapbox_style="open-street-map",
-                mapbox_zoom=3,
-                mapbox_center={"lat": np.mean(lat_range), "lon": np.mean(lon_range)},
-                width=1200,  # Set the width of the map
-                height=700,  # Set the height of the map
-            )
+            city_data = city_data[(city_data['Population'] >= min_population) &
+                                  (city_data['Population'] <= max_population)]
+            city_data.drop(columns=['rape'], inplace=True)
+            city_data.rename(columns={'violent_crime': "Violent Crime Totals per 100k People",
+                                      'murder': "Murder Totals per 100k People",
+                                      'robbery': 'Robbery Totals per 100k People',
+                                      'agrv_assault': 'Aggravated Assault Totals per 100k People',
+                                      'burglary': "Burglary Totals per 100k People",
+                                      'larceny': "Larceny Totals per 100k People",
+                                      'vehicle_theft': 'Vehicle Theft Totals per 100k People',
+                                      'total_crime': 'Total Crime per 100k People',
+                                      'tot_violent_crime': 'Total Violent Crime per 100k People',
+                                      'arson': 'Arson Total per 100k People'}, inplace=True)
+            city_data["Violent Crime Totals per 100k People"] = (
+                    (city_data['Violent Crime Totals per 100k People'] / city_data['Population']) * 100000)
 
-            # Display the city-level map
-            st.plotly_chart(fig, use_container_width=True)
+            city_data['Murder Totals per 100k People'] = (
+                    (city_data['Murder Totals per 100k People'] / city_data['Population']) * 100000)
+
+            city_data['Robbery Totals per 100k People'] = (
+                    (city_data['Robbery Totals per 100k People'] / city_data['Population']) * 100000)
+
+            city_data['Aggravated Assault Totals per 100k People'] = (
+                    (city_data['Aggravated Assault Totals per 100k People'] / city_data[
+                        'Population']) * 100000)
+
+            city_data['Burglary Totals per 100k People'] = (
+                    (city_data['Burglary Totals per 100k People'] / city_data['Population']) * 100000)
+
+            city_data['Larceny Totals per 100k People'] = (
+                    (city_data['Larceny Totals per 100k People'] / city_data['Population']) * 100000)
+
+            city_data['Vehicle Theft Totals per 100k People'] = (
+                    (city_data['Vehicle Theft Totals per 100k People'] / city_data['Population']) * 100000)
+
+            city_data['Total Crime per 100k People'] = (
+                    (city_data['Total Crime per 100k People'] / city_data['Population']) * 100000)
+
+            city_data['Total Violent Crime per 100k People'] = (
+                    (city_data['Total Violent Crime per 100k People'] / city_data['Population']) * 100000)
+
+            city_data['Arson Total per 100k People'] = (
+                    (city_data['Arson Total per 100k People'] / city_data['Population']) * 100000)
+
+            stat_options = city_data.select_dtypes(include=np.number).columns.tolist()  # Get numerical columns
+            items_to_remove = ['density', 'lat', 'lon', 'county_fips', 'Unnamed: 0', 'population_y', 'id', 'ranking',
+                               'population_x', 'prop_crime', 'tot_prop_crim']
+            stat_options = [item for item in stat_options if item not in items_to_remove]
+            color_by = st.selectbox("Select Column to Color Cities By", options=stat_options,
+                                    index=stat_options.index('Log Population'))
+
+            aggregate_by_county = st.checkbox("Aggregate by County", value=False)
+            if aggregate_by_county:
+                county_data = city_data.groupby(['county_name', 'state_name'], as_index=False).agg(
+                    {'Population': 'sum'})
+                county_data['state_abbreviation'] = county_data['state_name'].replace(STATE_ABBREVIATIONS)
+                county_data['county_name'] = county_data['county_name'].str.lower()
+
+                county_housing['State_abbrev'] = county_housing['State_abbrev'].str.upper()
+                county_data = pd.merge(county_data, county_housing, left_on=['county_name', 'state_abbreviation'],
+                                       right_on=['County', 'State_abbrev'], how='left')
+
+                county_data.drop(columns=['county_name_x', 'month_date_yyyymm', 'county_name_y', 'state_abbreviation',
+                                          'State_abbrev'],
+                                 inplace=True)
+                county_data.rename(columns={"county_fips": "County Fips Code",
+                                            "state_name": "State Name",
+                                            "median_listing_price": "Median House Listing Price",
+                                            "active_listing_count": "Active House Listings",
+                                            "median_days_on_market": "Median Days House on Market",
+                                            "new_listing_count": "New Housing Listings",
+                                            "price_increased_count": "Housing Price Increases",
+                                            "price_reduced_count": "Housing Price Reductions",
+                                            "pending_listing_count": "Pending Housing Listings",
+                                            'median_listing_price_per_square_foot':
+                                                "Median House Listing Price per Square Foot",
+                                            'median_square_feet': "Median House Square Footage",
+                                            'average_listing_price': 'Average House Listing Price',
+                                            'total_listing_count': "Total House Listings",
+                                            }, inplace=True)
+                county_data['Log Population'] = np.log10(county_data['Population'])
+                stat_options = county_data.select_dtypes(include=np.number).columns.tolist()
+                color_by = st.selectbox("Select Column to Color Counties By", options=stat_options,
+                                        index=stat_options.index('Log Population'))
+                # SOME COUNTIES NOT SHOWING UP
+                county_data = county_data.dropna(subset=['County Fips Code'])  # Drops rows with missing FIPS
+                county_data['County Fips Code'] = county_data['County Fips Code'].apply(lambda x: f'{int(x):05d}')
+                fig = px.choropleth(county_data,
+                                    geojson="https://raw.githubusercontent.com"
+                                            "/plotly/datasets/master/geojson-counties-fips.json",
+                                    # GeoJSON for counties
+                                    locations='County Fips Code',  # 'county_fips' column for geographical reference
+                                    color=color_by,
+                                    # Column to visualize (color by Median House Listing Price)
+                                    hover_name='County',  # Column to show on hover
+                                    hover_data={
+                                        'Population': True,
+                                        'Active House Listings': True,
+                                        'Median Days House on Market': True,
+                                        'New Housing Listings': True,
+                                        'Housing Price Increases': True,
+                                        'Housing Price Reductions': True,
+                                        'Pending Housing Listings': True,
+                                        'State Name': True
+                                    },
+                                    scope="usa",  # Limit map to USA
+                                    title='Median House Listing Price by County'
+                                    )
+
+                # Update layout for better display
+                fig.update_geos(fitbounds="locations", visible=False)
+                fig.update_layout(margin={"r": 0, "t": 50, "l": 0, "b": 0})
+
+                # Show the figure
+                st.plotly_chart(fig, use_container_width=True)
+                # st.dataframe(county_data)
+
+            else:
+                city_data = city_data.dropna(subset=[color_by])
+                fig = px.scatter_mapbox(
+                    city_data,
+                    lat='lat',
+                    lon='lon',
+                    hover_name='city',
+                    hover_data=['state_name', 'Population'],
+                    color=color_by,
+                    color_continuous_scale="Bluered",
+                    title=f"City-level Population in {', '.join(selected_states)}",
+                    height=700
+                )
+
+                fig.update_layout(
+                    mapbox_style="open-street-map",
+                    mapbox_center={"lat": np.mean(city_data['lat']), "lon": np.mean(city_data['lon'])},
+                    width=1200,
+                    height=700,
+                )
+
+                st.plotly_chart(fig, use_container_width=True)
 
         with tab2:
-            st.dataframe(city_data[['city', 'state_name', 'population']])
-
-    # Handle the case for individual states or selected regions
-    else:
-        # Filter the data to only the selected states
-        tab1, tab2 = st.tabs(['Map View', 'Table View'])
-        with tab1:
-            city_data = df[df['state_name'].isin(selected_states)]
-            city_data['city'].replace({' town': '', ' city': ''}, regex=True, inplace=True)
-            city_data['log_population'] = np.log10(city_data['population'])
-
-            min_population, max_population = st.slider(
-                "Select Population Range",
-                min_value=int(city_data['population'].min()),
-                max_value=int(city_data['population'].max()),
-                value=(int(city_data['population'].min()), int(city_data['population'].max()))
-            )
-            city_data = city_data[(city_data['population'] >= min_population) & (city_data['population'] <= max_population)]
-
-            # Adjust bounds for multiple states
-            lat_range = [min(city_data['lat']), max(city_data['lat'])]
-            lon_range = [min(city_data['lon']), max(city_data['lon'])]
-
-            # Create a city-level scatter plot map using Mapbox for street view
-            fig = px.scatter_mapbox(
-                city_data,
-                lat='lat',
-                lon='lon',
-                hover_name='city',
-                hover_data=['state_name', 'population'],
-                color='log_population',
-                color_continuous_scale="Bluered",  # Blue to Red color scale
-                title=f"City-level Population in {', '.join(selected_states)}",
-                zoom=5,
-                height=700
-            )
-
-            # Set the mapbox style to "open-street-map"
-            fig.update_layout(
-                mapbox_style="open-street-map",
-                mapbox_zoom=5,
-                mapbox_center={"lat": np.mean(lat_range), "lon": np.mean(lon_range)},
-                width=1200,  # Set the width of the map
-                height=700,  # Set the height of the map
-            )
-
-            # Display the city-level map
-            # When clicking on city dot, go to 3d view
-            # Also incorporate split map for statistics
-            # Be able to select county aggregate or cities
-            st.plotly_chart(fig, use_container_width=True)
-        with tab2:
-            #st.dataframe(city_data[['city', 'state_name', 'population']])
             st.dataframe(city_data)
+
+    # Map view for selected states
+    else:
+        tab1, tab2 = st.tabs(['Map View', 'Table View'])
+        city_data = df[df['state_name'].isin(selected_states)]
+        city_data['Log Population'] = np.log10(city_data['Population'])
+        # Crime Combining
+        city_data = pd.merge(city_data, crime_data_raw, left_on=['city', 'state_name'], right_on=['city', 'states'],
+                             how='left')
+
+        with tab1:
+            min_population, max_population = st.slider(
+                "Select Population Range",
+                min_value=int(city_data['Population'].min()),
+                max_value=int(city_data['Population'].max()),
+                value=(int(city_data['Population'].min()), int(city_data['Population'].max()))
+            )
+            city_data = city_data[(city_data['Population'] >= min_population) &
+                                  (city_data['Population'] <= max_population)]
+            city_data.drop(columns=['rape'], inplace=True)
+            city_data.rename(columns={'violent_crime': "Violent Crime Totals per 100k People",
+                                      'murder': "Murder Totals per 100k People",
+                                      'robbery': 'Robbery Totals per 100k People',
+                                      'agrv_assault': 'Aggravated Assault Totals per 100k People',
+                                      'burglary': "Burglary Totals per 100k People",
+                                      'larceny': "Larceny Totals per 100k People",
+                                      'vehicle_theft': 'Vehicle Theft Totals per 100k People',
+                                      'total_crime': 'Total Crime per 100k People',
+                                      'tot_violent_crime': 'Total Violent Crime per 100k People',
+                                      'arson': 'Arson Total per 100k People'}, inplace=True)
+            city_data["Violent Crime Totals per 100k People"] = (
+                    (city_data['Violent Crime Totals per 100k People'] / city_data['Population']) * 100000)
+
+            city_data['Murder Totals per 100k People'] = (
+                    (city_data['Murder Totals per 100k People'] / city_data['Population']) * 100000)
+
+            city_data['Robbery Totals per 100k People'] = (
+                    (city_data['Robbery Totals per 100k People'] / city_data['Population']) * 100000)
+
+            city_data['Aggravated Assault Totals per 100k People'] = (
+                    (city_data['Aggravated Assault Totals per 100k People'] / city_data[
+                        'Population']) * 100000)
+
+            city_data['Burglary Totals per 100k People'] = (
+                    (city_data['Burglary Totals per 100k People'] / city_data['Population']) * 100000)
+
+            city_data['Larceny Totals per 100k People'] = (
+                    (city_data['Larceny Totals per 100k People'] / city_data['Population']) * 100000)
+
+            city_data['Vehicle Theft Totals per 100k People'] = (
+                    (city_data['Vehicle Theft Totals per 100k People'] / city_data['Population']) * 100000)
+
+            city_data['Total Crime per 100k People'] = (
+                    (city_data['Total Crime per 100k People'] / city_data['Population']) * 100000)
+
+            city_data['Total Violent Crime per 100k People'] = (
+                    (city_data['Total Violent Crime per 100k People'] / city_data['Population']) * 100000)
+
+            city_data['Arson Total per 100k People'] = (
+                    (city_data['Arson Total per 100k People'] / city_data['Population']) * 100000)
+
+            stat_options = city_data.select_dtypes(include=np.number).columns.tolist()  # Get numerical columns
+            items_to_remove = ['density', 'lat', 'lon', 'county_fips', 'Unnamed: 0', 'population_y', 'id', 'ranking',
+                               'population_x', 'prop_crime', 'tot_prop_crime']
+            stat_options = [item for item in stat_options if item not in items_to_remove]
+            color_by = st.selectbox("Select Column to Color By", options=stat_options,
+                                    index=stat_options.index('Log Population'))
+            aggregate_by_county = st.checkbox("Aggregate by County", value=False)
+            if aggregate_by_county:
+                county_data = city_data.groupby(['county_name', 'state_name'],
+                                                as_index=False).agg({'Population': 'sum'})
+
+                county_data['state_abbreviation'] = county_data['state_name'].replace(STATE_ABBREVIATIONS)
+                county_data['county_name'] = county_data['county_name'].str.lower()
+
+                county_housing['State_abbrev'] = county_housing['State_abbrev'].str.upper()
+
+                county_data = pd.merge(county_data, county_housing, left_on=['county_name', 'state_abbreviation'],
+                                       right_on=['County', 'State_abbrev'], how='left')
+                county_data.drop(columns=['county_name_x', 'month_date_yyyymm', 'county_name_y', 'state_abbreviation',
+                                          'State_abbrev'],
+                                 inplace=True)
+                county_data.rename(columns={"county_fips": "County Fips Code",
+                                            "state_name": "State Name",
+                                            "median_listing_price": "Median House Listing Price",
+                                            "active_listing_count": "Active House Listings",
+                                            "median_days_on_market": "Median Days House on Market",
+                                            "new_listing_count": "New Housing Listings",
+                                            "price_increased_count": "Housing Price Increases",
+                                            "price_reduced_count": "Housing Price Reductions",
+                                            "pending_listing_count": "Pending Housing Listings",
+                                            'median_listing_price_per_square_foot':
+                                                "Median House Listing Price per Square Foot",
+                                            'median_square_feet': "Median House Square Footage",
+                                            'average_listing_price': 'Average House Listing Price',
+                                            'total_listing_count': "Total House Listings",
+                                            }, inplace=True)
+
+                # st.dataframe(county_data)
+
+                # Create a choropleth map using Plotly
+                county_data['Log Population'] = np.log10(county_data['Population'])
+                stat_options = county_data.select_dtypes(include=np.number).columns.tolist()
+                color_by = st.selectbox("Select Column to Color Counties By", options=stat_options,
+                                        index=stat_options.index('Log Population'))
+                county_data = county_data.dropna(subset=['County Fips Code'])  # Drops rows with missing FIPS
+                county_data['County Fips Code'] = county_data['County Fips Code'].apply(lambda x: f'{int(x):05d}')
+
+                fig = px.choropleth(county_data,
+                                    geojson="https://raw.githubusercontent.com"
+                                            "/plotly/datasets/master/geojson-counties-fips.json",
+                                    # GeoJSON for counties
+                                    locations='County Fips Code',  # 'county_fips' column for geographical reference
+                                    color=color_by,
+                                    # Column to visualize (color by Median House Listing Price)
+                                    hover_name='County',  # Column to show on hover
+                                    hover_data={
+                                        'Population': True,
+                                        'Active House Listings': True,
+                                        'Median Days House on Market': True,
+                                        'New Housing Listings': True,
+                                        'Housing Price Increases': True,
+                                        'Housing Price Reductions': True,
+                                        'Pending Housing Listings': True,
+                                    },
+                                    scope="usa",  # Limit map to USA
+                                    title='Median House Listing Price by County'
+                                    )
+
+                # Update layout for better display
+                fig.update_geos(fitbounds="locations", visible=False)
+                fig.update_layout(margin={"r": 0, "t": 50, "l": 0, "b": 0})
+
+                # Show the figure
+                st.plotly_chart(fig, use_container_width=True)
+
+            else:
+                city_data = city_data.dropna(subset=[color_by])
+                fig = px.scatter_mapbox(
+                    city_data,
+                    lat='lat',
+                    lon='lon',
+                    hover_name='city',
+                    hover_data=['state_name', 'Population'],
+                    color=color_by,
+                    color_continuous_scale="Bluered",
+                    title=f"City-level Population in {', '.join(selected_states)}",
+                    zoom=3,
+                    height=700
+                )
+
+                fig.update_layout(
+                    mapbox_style="open-street-map",
+                    mapbox_center={"lat": np.mean(city_data['lat']), "lon": np.mean(city_data['lon'])},
+                    width=1200,
+                    height=700,
+                )
+
+                st.plotly_chart(fig, use_container_width=True)
+
+        with tab2:
+            st.dataframe(city_data)
+
+
+def main():
+    if st.session_state.page == 'intro':
+        intro_page()
+    elif st.session_state.page == 'map':
+        map_page()
 
 
 if __name__ == "__main__":
     main()
-
