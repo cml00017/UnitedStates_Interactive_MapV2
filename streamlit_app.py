@@ -5,7 +5,7 @@ import numpy as np
 import plotly.graph_objects as go
 # Most recent correct app, still need to make appearance pretty, find more statistics
 # Maybe covid, wealth
-st.set_page_config(layout="wide")
+st.set_page_config(layout="wide") 
 
 if 'page' not in st.session_state:
     st.session_state.page = 'intro'
