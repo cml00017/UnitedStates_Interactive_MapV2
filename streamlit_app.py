@@ -3,9 +3,8 @@ import pandas as pd
 import plotly.express as px
 import numpy as np
 import plotly.graph_objects as go
-# Most recent correct app, still need to make appearance pretty, find more statistics
-# Maybe covid, wealth
-st.set_page_config(layout="wide") 
+# Most recent correct app  
+st.set_page_config(layout="wide")
 
 if 'page' not in st.session_state:
     st.session_state.page = 'intro'
@@ -100,9 +99,9 @@ def data_load(data):
 def intro_page():
     st.title("Welcome to MapMaster: Uncover U.S. Stats at a Glance!")
     st.write("""
-        This app allows you to explore various statistical data related to population, housing, covid, employment data,
-        and crime across different states and regions of the United States. 
-        You can visualize the data on a map or view detailed tables of the data.
+        This app allows you to explore various statistical data related to population, housing, covid, 
+        employment and economic data, some demographics, and crime across different states and regions 
+        of the United States. You can visualize the data on a map or view detailed tables of the data.
         To use this app, first you select either United States, or individual regions/states. 
         If you select the entire United States, you will be able to select two statistics per state 
         and see their correlation. 
@@ -127,6 +126,7 @@ def intro_page():
 # Main Function
 def map_page():
     # Load datasets
+
     # Load crime data and clean it
     crime_data_raw = data_load('total_crime.csv')
     # Replacing weird characters with no spaces
@@ -148,11 +148,13 @@ def map_page():
                                                                    'vehicle_theft': 'sum', 'total_crime': 'sum',
                                                                    'tot_violent_crime': 'sum', 'arson': 'sum'})
     crime_data_state['state_abrev'] = crime_data_state['states'].replace(STATE_ABBREVIATIONS)
+
     # Load more data
     county_housing = data_load('housing_data_city.csv')
     state_housing = data_load('Housing_data_state.csv')
     df_pop = data_load('USPopulations.csv')
     df_cities = data_load("uscities.csv")
+    covid_state = data_load('COVID19_state.csv')
 
     # Clean and preprocess city housing data
     county_housing[['County', 'State_abbrev']] = county_housing['county_name'].str.split(',', expand=True)
@@ -193,11 +195,17 @@ def map_page():
 
     # Map view for United States
     if "United States" in selected_region_or_states and len(selected_region_or_states) == 1:
+        # Aggregate to state
         state_data = df.groupby('state_abbreviation', as_index=False)['population'].sum()
+        # Add on Housing data
         state_data = pd.merge(state_data, state_housing, left_on='state_abbreviation', right_on='state_id', how='inner')
+        # Add on crime data
         state_data = pd.merge(state_data, crime_data_state, left_on='state_abbreviation', right_on='state_abrev',
                               how='left')
         state_data.drop(columns=['month_date_yyyymm'], inplace=True)
+        # Add on covid data
+        covid_state['State Abbreviation'] = covid_state['State'].replace(STATE_ABBREVIATIONS)
+        state_data = pd.merge(state_data, covid_state, left_on='state_abbreviation', right_on='State Abbreviation')
 
         state_data.rename(columns={"population": "Population Totals",
                                    "median_listing_price": "Median House Listing Price",
@@ -220,8 +228,24 @@ def map_page():
                                    'vehicle_theft': 'Vehicle Theft Totals per 100k People',
                                    'total_crime': 'Total Crime per 100k People',
                                    'tot_violent_crime': 'Total Violent Crime per 100k People',
-                                   'arson': 'Arson Total per 100k People'
+                                   'arson': 'Arson Total per 100k People',
+                                   'GDP': 'GDP Per Capita',
+                                   'Income': "Income Per Capita",
+                                   "ICU Beds": "Number of ICU Beds",
+                                   'Gini': 'Gini coefficient for income inequality',
+                                   'Deaths': 'Number of COVID19 Deaths',
+                                   'Infected': 'Number of COVID19 infections',
+                                   'Tested': 'Number of COVID19 tests',
+                                   'Urban': 'Percentage of the population living in an urban environment',
+                                   'Temperature': 'Average temperature in 2019',
+                                   'Med-Large Airports': 'Number of medium and large airports',
+                                   'Pollution': 'Measurement of the public exposure to particulate matter',
+                                   'Health Spending': 'Spending for all health services ($)',
+                                   'Physicians': 'Number of primary and specialty care active physicians',
+                                   'Respiratory Deaths': 'Chronic lower respiratory disease rate per 100,000 people',
+                                   'Flu Deaths': 'Influenza and Pneumonia death rate per 100,000 people',
                                    }, inplace=True)
+
         # Setting the statistics to be per 100k people for each of the crime columns
         state_data["Violent Crime Totals per 100k People"] = (
                 (state_data['Violent Crime Totals per 100k People']/state_data['Population Totals']) * 100000)
@@ -261,7 +285,11 @@ def map_page():
                                                                              'month_date_yyyymm',
                                                                              'state',
                                                                              'state_id',
-                                                                             'state_abrev']]
+                                                                             'state_abrev',
+                                                                             'State Abbreviation',
+                                                                             'School Closure Date',
+                                                                             'State',
+                                                                             ]]
             stat1 = st.selectbox('Select Statistic for Left Map', stat_options)
             stat2 = st.selectbox('Select Statistic for Right Map', stat_options)
 
@@ -341,8 +369,11 @@ def map_page():
                     st.plotly_chart(fig2, use_container_width=True)
 
         with tab2:
-            columns_to_exclude = []
+            columns_to_exclude = ['state_abbreviation', 'states', 'state_id', 'state_abrev', 'state']
+
             state_data_table = state_data.drop(columns=columns_to_exclude)
+            col = state_data_table.pop('State')
+            state_data_table.insert(0, 'State', col)
             st.dataframe(state_data_table)
 
     # Map view for All States
@@ -443,12 +474,28 @@ def map_page():
                                             'total_listing_count': "Total House Listings",
                                             }, inplace=True)
                 county_data['Log Population'] = np.log10(county_data['Population'])
+                county_data = county_data.dropna(subset=['County Fips Code'])  # Drops rows with missing FIPS
+                county_data['County Fips Code'] = county_data['County Fips Code'].apply(lambda x: f'{int(x):05d}')
+
+                # Add on covid county data
+                covid_county = data_load('covid_county.csv')
+                covid_county['fips'] = covid_county['fips'].astype(int).astype(str)
+                covid_county['fips'] = covid_county['fips'].apply(
+                    lambda x: str(int(x)) if isinstance(x, (int, float)) else str(x)
+                )
+                covid_county['fips'] = covid_county['fips'].apply(lambda x: f'{int(x):05d}')
+                # Merge covid to county data
+                county_data = pd.merge(county_data, covid_county, left_on='County Fips Code',
+                                       right_on='fips', how='outer')
+                county_data.rename(columns={'deaths': "Covid Deaths", 'cases': "Covid Cases"}, inplace=True)
+                county_data.drop(columns=['Unnamed: 0'], inplace=True)
+                county_data['Log Covid Deaths'] = np.log10(county_data['Covid Deaths'] + 1)
+                county_data['Log Covid Cases'] = np.log10(county_data['Covid Cases'] + 1)
+                # Make dropdown menu
                 stat_options = county_data.select_dtypes(include=np.number).columns.tolist()
                 color_by = st.selectbox("Select Column to Color Counties By", options=stat_options,
                                         index=stat_options.index('Log Population'))
-                # SOME COUNTIES NOT SHOWING UP
-                county_data = county_data.dropna(subset=['County Fips Code'])  # Drops rows with missing FIPS
-                county_data['County Fips Code'] = county_data['County Fips Code'].apply(lambda x: f'{int(x):05d}')
+                ###################
                 fig = px.choropleth(county_data,
                                     geojson="https://raw.githubusercontent.com"
                                             "/plotly/datasets/master/geojson-counties-fips.json",
@@ -465,10 +512,13 @@ def map_page():
                                         'Housing Price Increases': True,
                                         'Housing Price Reductions': True,
                                         'Pending Housing Listings': True,
-                                        'State Name': True
+                                        'State Name': True,
+                                        'Covid Cases': True,
+                                        'Covid Deaths':True
                                     },
                                     scope="usa",  # Limit map to USA
-                                    title='Median House Listing Price by County'
+                                    title=color_by,
+                                    color_continuous_scale=['blue','white','red']
                                     )
 
                 # Update layout for better display
@@ -501,9 +551,16 @@ def map_page():
                 )
 
                 st.plotly_chart(fig, use_container_width=True)
-
+        # Table for All States data
         with tab2:
-            st.dataframe(city_data)
+            columns_to_exclude = ['lat', 'lon', 'city_ascii', 'county_fips', 'county', 'population_x', 'source',
+                                  'military', 'incorporated', 'id', 'Unnamed: 0', 'state_abbreviation',
+                                  'states', 'cities', 'population_y']
+            city_data_table = city_data.drop(columns=columns_to_exclude)
+            col = city_data_table.pop('county_name')
+            city_data_table.insert(2, 'County', col)
+            city_data_table.rename(columns={'city': 'City', 'state_name': 'State Name'}, inplace=True)
+            st.dataframe(city_data_table)
 
     # Map view for selected states
     else:
@@ -602,16 +659,29 @@ def map_page():
                                             'total_listing_count': "Total House Listings",
                                             }, inplace=True)
 
-                # st.dataframe(county_data)
-
                 # Create a choropleth map using Plotly
                 county_data['Log Population'] = np.log10(county_data['Population'])
-                stat_options = county_data.select_dtypes(include=np.number).columns.tolist()
-                color_by = st.selectbox("Select Column to Color Counties By", options=stat_options,
-                                        index=stat_options.index('Log Population'))
                 county_data = county_data.dropna(subset=['County Fips Code'])  # Drops rows with missing FIPS
                 county_data['County Fips Code'] = county_data['County Fips Code'].apply(lambda x: f'{int(x):05d}')
 
+                # Add on covid county data
+                covid_county = data_load('covid_county.csv')
+                covid_county['fips'] = covid_county['fips'].astype(int).astype(str)
+                covid_county['fips'] = covid_county['fips'].apply(
+                    lambda x: str(int(x)) if isinstance(x, (int, float)) else str(x)
+                )
+                covid_county['fips'] = covid_county['fips'].apply(lambda x: f'{int(x):05d}')
+                # Merge covid to county data
+                county_data = pd.merge(county_data, covid_county, left_on='County Fips Code',
+                                       right_on='fips', how='outer')
+                county_data.rename(columns={'deaths': "Covid Deaths", 'cases': "Covid Cases"}, inplace=True)
+                county_data.drop(columns=['Unnamed: 0'], inplace=True)
+                county_data = county_data[county_data['state'].isin(selected_states)]
+                # Make dropdown menu
+                stat_options = county_data.select_dtypes(include=np.number).columns.tolist()
+                color_by = st.selectbox("Select Column to Color Counties By", options=stat_options,
+                                        index=stat_options.index('Log Population'))
+                # want to get coloring working for selected region
                 fig = px.choropleth(county_data,
                                     geojson="https://raw.githubusercontent.com"
                                             "/plotly/datasets/master/geojson-counties-fips.json",
@@ -628,9 +698,11 @@ def map_page():
                                         'Housing Price Increases': True,
                                         'Housing Price Reductions': True,
                                         'Pending Housing Listings': True,
+                                        'Covid Cases': True,
+                                        'Covid Deaths': True
                                     },
                                     scope="usa",  # Limit map to USA
-                                    title='Median House Listing Price by County'
+                                    title=color_by
                                     )
 
                 # Update layout for better display
@@ -665,7 +737,14 @@ def map_page():
                 st.plotly_chart(fig, use_container_width=True)
 
         with tab2:
-            st.dataframe(city_data)
+            columns_to_exclude = ['lat', 'lon', 'city_ascii', 'county_fips', 'county', 'population_x', 'source',
+                                  'military', 'incorporated', 'id', 'Unnamed: 0', 'state_abbreviation',
+                                  'states', 'cities', 'population_y']
+            city_data_table = city_data.drop(columns=columns_to_exclude)
+            col = city_data_table.pop('county_name')
+            city_data_table.insert(2, 'County', col)
+            city_data_table.rename(columns={'city': 'City', 'state_name': 'State Name'}, inplace=True)
+            st.dataframe(city_data_table)
 
 
 def main():
