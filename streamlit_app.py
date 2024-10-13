@@ -102,11 +102,19 @@ def intro_page():
         This app allows you to explore various statistical data related to population, housing, covid, 
         employment and economic data, some demographics, and crime across different states and regions 
         of the United States. You can visualize the data on a map or view detailed tables of the data.
+
+
         To use this app, first you select either United States, or individual regions/states. 
         If you select the entire United States, you will be able to select two statistics per state 
         and see their correlation. 
         If you select individual states or regions as a whole, you will see statistics by the city level or aggregate to
         the county level. 
+
+        Sources for data:
+            - Covid and demographic County Data: https://www.kaggle.com/datasets/imoore/us-covid19-dataset-live-hourlydaily-updates
+            - Covid State Data and population numbers: https://www.kaggle.com/datasets/nightranger77/covid19-state-data
+            - Crime Rates: https://www.kaggle.com/datasets/kabhishm/united-states-crime-rates-by-city-population
+            - Housing Data: https://www.kaggle.com/datasets/vincentvaseghi/us-cities-housing-market-data
     """)
     if st.button("Start Exploring!"):
         st.session_state.page = 'map'
@@ -676,6 +684,8 @@ def map_page():
                                        right_on='fips', how='outer')
                 county_data.rename(columns={'deaths': "Covid Deaths", 'cases': "Covid Cases"}, inplace=True)
                 county_data.drop(columns=['Unnamed: 0'], inplace=True)
+                county_data['Log Covid Deaths'] = np.log10(county_data['Covid Deaths'] + 1)
+                county_data['Log Covid Cases'] = np.log10(county_data['Covid Cases'] + 1)
                 county_data = county_data[county_data['state'].isin(selected_states)]
                 # Make dropdown menu
                 stat_options = county_data.select_dtypes(include=np.number).columns.tolist()
@@ -702,7 +712,8 @@ def map_page():
                                         'Covid Deaths': True
                                     },
                                     scope="usa",  # Limit map to USA
-                                    title=color_by
+                                    title=color_by,
+                                    color_continuous_scale=['Blue', 'White', 'Red']
                                     )
 
                 # Update layout for better display
