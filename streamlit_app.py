@@ -111,11 +111,16 @@ def intro_page():
         the county level. 
 
         Sources for data:
+
             - Covid and demographic County Data: https://www.kaggle.com/datasets/imoore/us-covid19-dataset-live-hourlydaily-updates
+
             - Covid State Data and population numbers: https://www.kaggle.com/datasets/nightranger77/covid19-state-data
+
             - Crime Rates: https://www.kaggle.com/datasets/kabhishm/united-states-crime-rates-by-city-population
+
             - Housing Data: https://www.kaggle.com/datasets/vincentvaseghi/us-cities-housing-market-data
     """)
+    
     if st.button("Start Exploring!"):
         st.session_state.page = 'map'
 
